@@ -1,0 +1,94 @@
+USE [AdsellsDATA]
+GO
+/****** Object:  StoredProcedure [dbo].[JobOrderExpenseReport]    Script Date: 21/12/2021 6:59:16 pm ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+
+ALTER PROCEDURE [dbo].[JobOrderExpenseReport]
+@cWhere varchar(max),
+@cOrderBy varchar(2000),
+@cCOM Varchar(8000),
+@opt varchar(200)	
+AS
+BEGIN
+	DECLARE  @qryStr varchar(max)
+	DECLARE @cSql0 varchar(MAX)
+	SET @cSql0 = ' SELECT  * into #Off FROM  udfSplit(''' + @cCOM + ''','',''); '	
+	DECLARE  @qryStr1 varchar(max)
+	SET @qryStr1 = ' select  v.vno AS Joborderno, Sum((((SharedEMS_DB.dbo.getOverTimeRate(OTE.oDateOf,OTE.EmpID) * OTE.oHours) * OTJob.percentage) / 100)) OT into #tmp1
+				from SharedEMS_DB.dbo.tblOverTimeEntry OTE  
+				INNER JOIN SharedEMS_DB.dbo.tblOTJoborderEntry OTJob on  OTJob.Dateof = OTE.oDateOf and OTJob.vockey = OTE.vockey
+			inner join joborders_v v on v.vno= OTJob.joborder
+		inner join #Off on #Off.val = v.off_code 
+		 '+ @cWhere +' 
+		 GROUP BY vno
+		 '	
+	if(@opt='0')
+	begin
+		SET @qryStr = ' 
+		SELECT CustCode, customer CustName, vno, vdate, Remarks, clientname, Saleman AS saleperson, GroupName, userid, ISNULL(SUM(amount),1) Amount,projectid, Project ProjectName,
+		 (SELECT ISNULL(SUM((consumptionQty * rate)),0)AS VInAmt FROM ISSUENOTE_V WHERE documentno = joborders_v.vno) ISU,
+		 (SELECT ISNULL(SUM(amount),0)AS VInAmt FROM PAY_SI_DETAIL WHERE joborderno = joborders_v.vno)	SIV ,
+		 (ISNULL((select sum(DispatchCostAmt) from InvDCdet where JobOrderNo = joborders_v.vno ),0) + ISNULL((select sum(amount) from VehicleDailyDispatchEntry_Det where JobOrderNo = joborders_v.vno),0)) DC,
+		 ISNULL((select sum(debit) from acgldet where acgldet.joborderno = joborders_v.vno),0) CPV,
+		 --ISNULL(( select  sum((((SharedEMS_DB.dbo.getOverTimeRate(OTE.oDateOf,OTE.EmpID) * OTE.oHours) * OTJob.percentage) / 100)) Amount
+			--	from SharedEMS_DB.dbo.tblOverTimeEntry OTE  INNER JOIN SharedEMS_DB.dbo.tblOTJoborderEntry OTJob on  OTJob.Dateof = OTE.oDateOf and OTJob.vockey = OTE.vockey
+			--	where OTJob.joborder = joborders_v.vno),0) OT,
+			ISNULL(#tmp1.OT,0) as OT,
+		 ISNULL((select SUM(Allownace) from ICDAView where JobOrderNo = joborders_v.vno),0) ICDA,
+		 ISNULL((select sum(amountclaimed) from ExpenseClaimAndClearanceHeadLab where joborderno = joborders_v.vno),0) LExp,
+		 ISNULL(SUM(dbo.FnPrintingCost(joborders_v.vno, joborders_v.pk)),0) PC,
+		 jobExpense
+		 into #tmp
+		FROM  joborders_v INNER JOIN
+		#Off on #Off.val = joborders_v.off_code 
+		LEFT JOIN #tmp1 ON joborders_v.vno=#tmp1.Joborderno
+		 '+ @cWhere +' 
+		 GROUP BY CustCode, customer, vno, vdate, Remarks, clientname, saleperson, Saleman, GroupName, userid, projectid, Project, jobExpense,OT 
+		 '+ @cOrderBy +' 
+		 select * from  #tmp  '		 	
+			
+	end
+	if(@opt='1')
+	begin
+		SET @qryStr = ' SELECT CustCode, customer CustName, vno, vdate, Remarks, clientname, Saleman AS saleperson, GroupName, userid, ISNULL(SUM(amount),1) Amount,projectid, Project ProjectName,
+		 (SELECT ISNULL(SUM((consumptionQty * rate)),0)AS VInAmt FROM ISSUENOTE_V WHERE documentno = joborders_v.vno) ISU,
+		 (SELECT ISNULL(SUM(amount),0)AS VInAmt FROM PAY_SI_DETAIL WHERE joborderno = joborders_v.vno)	SIV, 
+		 (ISNULL((select sum(DispatchCostAmt) from InvDCdet where JobOrderNo = joborders_v.vno ),0) + ISNULL((select sum(amount) from VehicleDailyDispatchEntry_Det where JobOrderNo = joborders_v.vno),0)) DC,
+		 ISNULL((select sum(debit) from acgldet where acgldet.joborderno = joborders_v.vno),0) CPV,
+	--	 ISNULL(( select  sum((((SharedEMS_DB.dbo.getOverTimeRate(OTE.oDateOf,OTE.EmpID) * OTE.oHours) * OTJob.percentage) / 100)) Amount
+			--	from SharedEMS_DB.dbo.tblOverTimeEntry OTE  INNER JOIN SharedEMS_DB.dbo.tblOTJoborderEntry OTJob on  OTJob.Dateof = OTE.oDateOf and OTJob.vockey = OTE.vockey
+			--	where OTJob.joborder = joborders_v.vno),0) OT,
+			ISNULL(#tmp1.OT,0) as OT,
+		 ISNULL((select SUM(Allownace) from ICDAView where JobOrderNo = joborders_v.vno),0) ICDA,
+		 ISNULL((select sum(amountclaimed) from ExpenseClaimAndClearanceHeadLab where joborderno = joborders_v.vno),0) LExp,
+		 ISNULL(SUM(dbo.FnPrintingCost(joborders_v.vno, joborders_v.pk)),0) PC,
+		 jobExpense
+		 into #tmp
+		FROM  joborders_v INNER JOIN
+		#Off on #Off.val = joborders_v.off_code 
+		LEFT JOIN #tmp1 ON joborders_v.vno=#tmp1.Joborderno
+		 '+ @cWhere +' 
+		 GROUP BY CustCode, customer, vno, vdate, Remarks, clientname, saleperson, Saleman, GroupName, userid, projectid, Project, jobExpense ,OT
+		 '+ @cOrderBy +' 
+		 select * from  #tmp where (((Amount * 70)/100) - (ISU + SIV + DC + CPV + PC)) < 0 '		
+	end
+		EXEC(@cSql0 +@qryStr1+ @qryStr)
+
+END
+
+
+
+
+
+
+
+
+
+
+
+
